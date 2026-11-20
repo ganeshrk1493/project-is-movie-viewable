@@ -1,4 +1,4 @@
-# 1. GCS Bronze Bucket (Raw API payloads & Dataflow temp/staging)
+# 1. GCS Bronze Bucket (Raw API payloads & Dataflow Classic Template/temp/staging)
 resource "google_storage_bucket" "bronze_lake" {
   name                        = "${var.project_id}-bronze-lake"
   location                    = var.region
@@ -10,25 +10,29 @@ resource "google_storage_bucket" "bronze_lake" {
   }
 }
 
-# 2. Pub/Sub Topic + Dead-Letter Topic for Ingestion
-resource "google_pubsub_topic" "movie_ingest_dlq" {
-  name = "movie-ingest-dlq"
-}
-
+# 2. Pub/Sub Topic for GCS File-Drop Events
 resource "google_pubsub_topic" "movie_ingest_topic" {
   name = "movie-ingest-events"
 }
 
-resource "google_pubsub_subscription" "movie_ingest_sub" {
-  name  = "movie-ingest-beam-sub"
-  topic = google_pubsub_topic.movie_ingest_topic.id
+# Grant Google Cloud Storage's internal service agent permission to publish to Pub/Sub
+data "google_storage_project_service_account" "gcs_account" {}
 
-  ack_deadline_seconds = 60
+resource "google_pubsub_topic_iam_member" "gcs_publisher" {
+  topic  = google_pubsub_topic.movie_ingest_topic.id
+  role   = "roles/pubsub.publisher"
+  member = "serviceAccount:${data.google_storage_project_service_account.gcs_account.email_address}"
+}
 
-  dead_letter_policy {
-    dead_letter_topic     = google_pubsub_topic.movie_ingest_dlq.id
-    max_delivery_attempts = 5
-  }
+# Trigger Pub/Sub notification only when new files finish uploading under `raw/`
+resource "google_storage_notification" "raw_file_notification" {
+  bucket             = google_storage_bucket.bronze_lake.name
+  payload_format     = "JSON_API_V1"
+  topic              = google_pubsub_topic.movie_ingest_topic.id
+  event_types        = ["OBJECT_FINALIZE"]
+  object_name_prefix = "raw/"
+
+  depends_on = [google_pubsub_topic_iam_member.gcs_publisher]
 }
 
 # 3. BigQuery Medallion Datasets (Raw, Silver, Gold)
@@ -53,7 +57,7 @@ resource "google_bigquery_dataset" "gold" {
   delete_contents_on_destroy = true
 }
 
-# 4. Raw Movies Table in BigQuery
+# 4. Raw Movies Table in BigQuery (Valid Records)
 resource "google_bigquery_table" "raw_movies" {
   dataset_id          = google_bigquery_dataset.raw.dataset_id
   table_id            = "raw_movies_payload"
@@ -67,7 +71,28 @@ resource "google_bigquery_table" "raw_movies" {
   schema = jsonencode([
     { name = "imdb_id", type = "STRING", mode = "REQUIRED" },
     { name = "source", type = "STRING", mode = "REQUIRED" },
+    { name = "source_file", type = "STRING", mode = "NULLABLE" },
     { name = "raw_json", type = "JSON", mode = "NULLABLE" },
     { name = "ingested_at", type = "TIMESTAMP", mode = "REQUIRED" }
+  ])
+}
+
+# 5. Raw Movies Dead-Letter Table in BigQuery (Parse & Schema Errors)
+resource "google_bigquery_table" "raw_movies_dlq" {
+  dataset_id          = google_bigquery_dataset.raw.dataset_id
+  table_id            = "raw_movies_dlq"
+  deletion_protection = false
+
+  time_partitioning {
+    type  = "DAY"
+    field = "failed_at"
+  }
+
+  schema = jsonencode([
+    { name = "source_file", type = "STRING", mode = "NULLABLE" },
+    { name = "raw_line", type = "STRING", mode = "NULLABLE" },
+    { name = "error_stage", type = "STRING", mode = "REQUIRED" },
+    { name = "error_message", type = "STRING", mode = "REQUIRED" },
+    { name = "failed_at", type = "TIMESTAMP", mode = "REQUIRED" }
   ])
 }
