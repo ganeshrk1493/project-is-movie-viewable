@@ -33,24 +33,24 @@ resource "google_pubsub_subscription" "movie_ingest_sub" {
 
 # 3. BigQuery Medallion Datasets (Raw, Silver, Gold)
 resource "google_bigquery_dataset" "raw" {
-  dataset_id                  = "movie_raw"
-  friendly_name               = "Movie Raw Layer"
-  location                    = var.region
-  delete_contents_on_destroy  = true
+  dataset_id                 = "movie_raw"
+  friendly_name              = "Movie Raw Layer"
+  location                   = var.region
+  delete_contents_on_destroy = true
 }
 
 resource "google_bigquery_dataset" "silver" {
-  dataset_id                  = "movie_silver"
-  friendly_name               = "Movie Silver Layer"
-  location                    = var.region
-  delete_contents_on_destroy  = true
+  dataset_id                 = "movie_silver"
+  friendly_name              = "Movie Silver Layer"
+  location                   = var.region
+  delete_contents_on_destroy = true
 }
 
 resource "google_bigquery_dataset" "gold" {
-  dataset_id                  = "movie_gold"
-  friendly_name               = "Movie Gold & Semantic Search Layer"
-  location                    = var.region
-  delete_contents_on_destroy  = true
+  dataset_id                 = "movie_gold"
+  friendly_name              = "Movie Gold & Semantic Search Layer"
+  location                   = var.region
+  delete_contents_on_destroy = true
 }
 
 # 4. Raw Movies Table in BigQuery
@@ -65,9 +65,9 @@ resource "google_bigquery_table" "raw_movies" {
   }
 
   schema = jsonencode([
-    { name = "imdb_id",      type = "STRING",    mode = "REQUIRED" },
-    { name = "source",       type = "STRING",    mode = "REQUIRED" },
-    { name = "raw_json",     type = "JSON",      mode = "NULLABLE" },
-    { name = "ingested_at",  type = "TIMESTAMP", mode = "REQUIRED" }
+    { name = "imdb_id", type = "STRING", mode = "REQUIRED" },
+    { name = "source", type = "STRING", mode = "REQUIRED" },
+    { name = "raw_json", type = "JSON", mode = "NULLABLE" },
+    { name = "ingested_at", type = "TIMESTAMP", mode = "REQUIRED" }
   ])
 }
