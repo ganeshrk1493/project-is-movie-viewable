@@ -1,0 +1,7 @@
+config {
+  type: "declaration",
+  database: "project-is-movie-viewable",
+  schema: "movie_raw",
+  name: "raw_movies_payload",
+  description: "Raw batch-ingested movie payloads from TMDB and OMDb."
+}

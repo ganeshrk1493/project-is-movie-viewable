@@ -1,0 +1,5 @@
+defaultProject: project-is-movie-viewable
+defaultLocation: asia-south1
+defaultDataset: movie_silver
+defaultAssertionDataset: dataform_assertions
+dataformCoreVersion: 3.0.0

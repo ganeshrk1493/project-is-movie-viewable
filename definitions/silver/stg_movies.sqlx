@@ -1,0 +1,70 @@
+config {
+  type: "table",
+  schema: "movie_silver",
+  name: "stg_movies",
+  description: "Deduplicated, typed, and flattened movie metadata from raw JSON payloads.",
+  bigquery: {
+    partitionBy: "DATE(ingested_at)",
+    clusterBy: ["imdb_id"]
+  },
+  assertions: {
+    uniqueKey: ["imdb_id"],
+    nonNull: ["imdb_id", "title"]
+  }
+}
+
+WITH unwrapped AS (
+  SELECT
+    imdb_id,
+    source,
+    source_file,
+    ingested_at,
+    -- Unwrap double-encoded JSON string into native BigQuery JSON
+    SAFE.PARSE_JSON(JSON_VALUE(raw_json)) AS payload
+  FROM ${ref("raw_movies_payload")}
+  WHERE source = 'tmdb_omdb_batch'
+),
+
+deduped AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (PARTITION BY imdb_id ORDER BY ingested_at DESC) AS rn
+  FROM unwrapped
+  WHERE payload IS NOT NULL
+)
+
+SELECT
+  imdb_id,
+  CAST(JSON_VALUE(payload, '$.tmdb_id') AS INT64) AS tmdb_id,
+  JSON_VALUE(payload, '$.title') AS title,
+  SAFE_CAST(JSON_VALUE(payload, '$.release_date') AS DATE) AS release_date,
+  SAFE_CAST(JSON_VALUE(payload, '$.runtime_mins') AS INT64) AS runtime_mins,
+  JSON_VALUE_ARRAY(payload, '$.genres') AS genres,
+  JSON_VALUE(payload, '$.overview') AS overview,
+  JSON_VALUE(payload, '$.full_plot') AS full_plot,
+  JSON_VALUE(payload, '$.poster_url') AS poster_url,
+  SAFE_CAST(JSON_VALUE(payload, '$.imdb_rating') AS FLOAT64) AS imdb_rating,
+  SAFE_CAST(REPLACE(JSON_VALUE(payload, '$.imdb_votes'), ',', '') AS INT64) AS imdb_votes,
+  SAFE_CAST(JSON_VALUE(payload, '$.metascore') AS INT64) AS metascore,
+
+  -- Standardized Parental Guidance Certifications
+  JSON_VALUE(payload, '$.parental_certifications.in_cert') AS india_certification,
+  JSON_VALUE(payload, '$.parental_certifications.us_cert') AS us_certification,
+  COALESCE(
+    JSON_VALUE(payload, '$.parental_certifications.in_cert'),
+    JSON_VALUE(payload, '$.parental_certifications.us_cert'),
+    JSON_VALUE(payload, '$.parental_certifications.omdb_rated'),
+    'Not Rated'
+  ) AS effective_parental_rating,
+
+  -- Indian OTT Platform Availability
+  JSON_VALUE(payload, '$.indian_ott.link') AS india_ott_link,
+  JSON_VALUE_ARRAY(payload, '$.indian_ott.flatrate') AS india_ott_flatrate,
+  JSON_VALUE_ARRAY(payload, '$.indian_ott.rent') AS india_ott_rent,
+  JSON_VALUE_ARRAY(payload, '$.indian_ott.buy') AS india_ott_buy,
+
+  -- Top 5 Reviews JSON Array
+  JSON_QUERY(payload, '$.top_5_reviews') AS top_5_reviews_json,
+  ingested_at
+FROM deduped
+WHERE rn = 1
