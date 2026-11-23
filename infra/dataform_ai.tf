@@ -94,7 +94,7 @@ resource "google_dataform_repository" "movie_dataform_repo" {
 }
 
 # 6. Production Release Config (compiles main branch every 6 hours)
-resource "google_dataform_release_config" "prod_release" {
+resource "google_dataform_repository_release_config" "prod_release" {
   provider      = google-beta
   project       = var.project_id
   region        = var.region
@@ -111,13 +111,13 @@ resource "google_dataform_release_config" "prod_release" {
 }
 
 # 7. Scheduled Workflow Execution Config (runs Silver -> Gold daily at 02:00 IST)
-resource "google_dataform_workflow_config" "daily_warehouse_run" {
+resource "google_dataform_repository_workflow_config" "daily_warehouse_run" {
   provider       = google-beta
   project        = var.project_id
   region         = var.region
   repository     = google_dataform_repository.movie_dataform_repo.name
   name           = "daily-silver-gold-build"
-  release_config = google_dataform_release_config.prod_release.id
+  release_config = google_dataform_repository_release_config.prod_release.id
   cron_schedule  = "0 2 * * *"
   time_zone      = "Asia/Kolkata"
 
