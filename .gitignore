@@ -4,3 +4,6 @@
 .terraform.lock.hcl
 *.tfvars
 .env
+.venv/
+sample_test.jsonl
+__pycache__/

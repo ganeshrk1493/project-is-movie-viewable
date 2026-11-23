@@ -1,0 +1,54 @@
+name: "Build Dataflow Classic Template"
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "pipeline/**"
+      - ".github/workflows/dataflow-template-ci.yml"
+  workflow_dispatch: # Allows you to manually trigger a rebuild from GitHub UI if you recreate the project!
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-template:
+    name: "Compile & Stage Classic Template to GCS"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pipeline
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: "projects/792044975357/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
+          service_account: "terraform-ci-sa@project-is-movie-viewable.iam.gserviceaccount.com"
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: "pipeline/requirements.txt"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compile Dataflow Classic Template to GCS
+        run: |
+          python beam_ingest.py \
+            --runner=DataflowRunner \
+            --project=project-is-movie-viewable \
+            --region=asia-south1 \
+            --staging_location=gs://project-is-movie-viewable-bronze-lake/staging \
+            --temp_location=gs://project-is-movie-viewable-bronze-lake/temp \
+            --template_location=gs://project-is-movie-viewable-bronze-lake/templates/movie-ingest-classic
