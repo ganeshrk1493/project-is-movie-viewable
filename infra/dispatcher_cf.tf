@@ -16,6 +16,7 @@ resource "google_service_account" "dispatcher_sa" {
   display_name = "Dataflow Dispatcher Cloud Function SA"
 }
 
+
 # Grant permissions to launch Dataflow jobs, act as worker SA, and read/write GCS
 resource "google_project_iam_member" "dispatcher_roles" {
   for_each = toset([
@@ -23,7 +24,8 @@ resource "google_project_iam_member" "dispatcher_roles" {
     "roles/iam.serviceAccountUser",
     "roles/storage.objectAdmin",
     "roles/eventarc.eventReceiver",
-    "roles/run.invoker"
+    "roles/run.invoker",
+    "roles/serviceusage.serviceUsageConsumer"
   ])
   project = var.project_id
   role    = each.value
@@ -88,3 +90,4 @@ resource "google_cloudfunctions2_function" "dataflow_dispatcher" {
     google_project_iam_member.dispatcher_roles
   ]
 }
+
