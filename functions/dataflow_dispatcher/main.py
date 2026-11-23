@@ -60,6 +60,7 @@ def trigger_dataflow(cloud_event):
                 "environment": {
                     "tempLocation": TEMP_GCS_LOCATION,
                     "zone": f"{REGION}-a",
+                    "serviceAccountEmail": f"dataflow-dispatcher-sa@{PROJECT_ID}.iam.gserviceaccount.com",
                 },
             },
         )

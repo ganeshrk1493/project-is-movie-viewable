@@ -17,10 +17,14 @@ resource "google_service_account" "dispatcher_sa" {
 }
 
 
-# Grant permissions to build the function, launch Dataflow jobs, act as worker SA, and read/write GCS
+
+# Grant permissions to build the function, launch Dataflow jobs, act as worker SA, read/write GCS, and load BQ
 resource "google_project_iam_member" "dispatcher_roles" {
   for_each = toset([
     "roles/dataflow.admin",
+    "roles/dataflow.worker",
+    "roles/bigquery.dataEditor",
+    "roles/bigquery.jobUser",
     "roles/iam.serviceAccountUser",
     "roles/storage.objectAdmin",
     "roles/eventarc.eventReceiver",
