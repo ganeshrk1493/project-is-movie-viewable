@@ -46,9 +46,13 @@ resource "google_project_iam_member" "dataform_sa_roles" {
   member  = "serviceAccount:${google_service_account.dataform_sa.email}"
 }
 
-# 4. Grant Google-managed Dataform Service Agent access to Secret Manager & Runner SA
-data "google_project" "project" {
-  project_id = var.project_id
+# 4. Materialize and grant permissions to the Google-managed Dataform Service Agent
+resource "google_project_service_identity" "dataform_sa_identity" {
+  provider = google-beta
+  project  = var.project_id
+  service  = "dataform.googleapis.com"
+
+  depends_on = [google_project_service.dataform_ai_apis]
 }
 
 resource "google_project_iam_member" "dataform_service_agent_roles" {
@@ -59,10 +63,9 @@ resource "google_project_iam_member" "dataform_service_agent_roles" {
   ])
   project = var.project_id
   role    = each.value
-  member  = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-dataform.iam.gserviceaccount.com"
-
-  depends_on = [google_project_service.dataform_ai_apis]
+  member  = "serviceAccount:${google_project_service_identity.dataform_sa_identity.email}"
 }
+
 
 # Reference the existing GitHub PAT secret
 data "google_secret_manager_secret_version" "github_pat" {
