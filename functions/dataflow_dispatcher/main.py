@@ -57,9 +57,11 @@ def trigger_dataflow(cloud_event):
                 "parameters": {
                     "input_file": input_gcs_path,
                 },
+
                 "environment": {
                     "tempLocation": TEMP_GCS_LOCATION,
-                    "zone": f"{REGION}-a",
+                    "machineType": "e2-standard-2",
+                    "maxWorkers": 2,
                     "serviceAccountEmail": f"dataflow-dispatcher-sa@{PROJECT_ID}.iam.gserviceaccount.com",
                 },
             },
