@@ -1,0 +1,165 @@
+config {
+  type: "incremental",
+  schema: "movie_gold",
+  name: "gold_movie_catalog",
+  uniqueKey: ["imdb_id"],
+  description: "AI-enriched movie catalog with Gemini review consensus, parental guidance notes, Indian OTT availability, and semantic embeddings.",
+  bigquery: {
+    partitionBy: "DATE(updated_at)",
+    clusterBy: ["effective_parental_rating", "imdb_id"]
+  },
+  assertions: {
+    uniqueKey: ["imdb_id"],
+    nonNull: ["imdb_id", "title", "search_document"]
+  },
+  dependencies: ["vertex_ai_models"]
+}
+
+WITH source_movies AS (
+  SELECT
+    s.*,
+    EXTRACT(YEAR FROM s.release_date) AS release_year,
+    CASE
+      WHEN ARRAY_LENGTH(s.india_ott_flatrate) > 0 AND (ARRAY_LENGTH(s.india_ott_rent) > 0 OR ARRAY_LENGTH(s.india_ott_buy) > 0)
+        THEN CONCAT(
+          'Included with ', ARRAY_TO_STRING(s.india_ott_flatrate, ', '),
+          ' • Rent/Buy on ', ARRAY_TO_STRING(ARRAY(
+            SELECT DISTINCT p FROM UNNEST(ARRAY_CONCAT(s.india_ott_rent, s.india_ott_buy)) AS p
+          ), ', ')
+        )
+      WHEN ARRAY_LENGTH(s.india_ott_flatrate) > 0
+        THEN CONCAT('Included with ', ARRAY_TO_STRING(s.india_ott_flatrate, ', '))
+      WHEN ARRAY_LENGTH(s.india_ott_rent) > 0 OR ARRAY_LENGTH(s.india_ott_buy) > 0
+        THEN CONCAT(
+          'Available to Rent/Buy on ', ARRAY_TO_STRING(ARRAY(
+            SELECT DISTINCT p FROM UNNEST(ARRAY_CONCAT(s.india_ott_rent, s.india_ott_buy)) AS p
+          ), ', ')
+        )
+      ELSE 'Not yet streaming on Indian OTT platforms'
+    END AS india_watch_summary
+  FROM ${ref("stg_movies")} AS s
+  ${when(incremental(), `
+    LEFT JOIN ${self()} AS existing
+      ON s.imdb_id = existing.imdb_id
+    WHERE existing.imdb_id IS NULL
+       OR s.ingested_at > existing.updated_at
+  `)}
+),
+
+ai_prompts AS (
+  SELECT
+    *,
+    CONCAT(
+      'Summarize the following audience reviews for the movie "', title, '" into a crisp, balanced 2-sentence verdict highlighting what viewers praised and any common criticisms. ',
+      'If no reviews are provided, write a 1-sentence neutral note based on the plot overview. Do not use bullet points or markdown.\n\n',
+      'Overview: ', COALESCE(overview, 'N/A'), '\n',
+      'Reviews JSON: ', COALESCE(TO_JSON_STRING(top_5_reviews_json), '[]')
+    ) AS review_prompt,
+    CONCAT(
+      'Provide a concise 2-sentence family suitability and parental guidance advisory for the movie "', title, '". ',
+      'India CBFC Rating: ', COALESCE(india_certification, 'Not Rated'),
+      ', US Rating: ', COALESCE(us_certification, 'Not Rated'),
+      ', Effective Rating: ', effective_parental_rating, '. ',
+      'Based on the rating and plot below, explain what themes (violence, language, mature themes, intensity) parents should know about in plain, helpful language.\n\n',
+      'Plot: ', COALESCE(full_plot, overview, 'N/A')
+    ) AS parental_prompt
+  FROM source_movies
+),
+
+with_review_summary AS (
+  SELECT
+    * EXCEPT (ml_generate_text_llm_result, ml_generate_text_status),
+    TRIM(ml_generate_text_llm_result) AS ai_review_consensus
+  FROM ML.GENERATE_TEXT(
+    MODEL `project-is-movie-viewable.movie_gold.gemini_flash_model`,
+    (
+      SELECT
+        *,
+        review_prompt AS prompt
+      FROM ai_prompts
+    ),
+    STRUCT(
+      0.2 AS temperature,
+      180 AS max_output_tokens,
+      TRUE AS flatten_json_output
+    )
+  )
+),
+
+with_parental_summary AS (
+  SELECT
+    * EXCEPT (ml_generate_text_llm_result, ml_generate_text_status, prompt, review_prompt, parental_prompt),
+    TRIM(ml_generate_text_llm_result) AS ai_parental_advisory
+  FROM ML.GENERATE_TEXT(
+    MODEL `project-is-movie-viewable.movie_gold.gemini_flash_model`,
+    (
+      SELECT
+        *,
+        parental_prompt AS prompt
+      FROM with_review_summary
+    ),
+    STRUCT(
+      0.2 AS temperature,
+      180 AS max_output_tokens,
+      TRUE AS flatten_json_output
+    )
+  )
+),
+
+with_search_doc AS (
+  SELECT
+    *,
+    CONCAT(
+      'Title: ', title, ' (', COALESCE(CAST(release_year AS STRING), 'Unknown Year'), '). ',
+      'Genres: ', COALESCE(ARRAY_TO_STRING(genres, ', '), 'General'), '. ',
+      'IMDb Rating: ', COALESCE(CAST(imdb_rating AS STRING), 'N/A'), '/10. ',
+      'Parental Rating: ', effective_parental_rating, '. ',
+      'Indian Streaming Availability: ', india_watch_summary, '. ',
+      'Plot: ', COALESCE(full_plot, overview, ''), ' ',
+      'Audience Verdict: ', COALESCE(ai_review_consensus, ''), ' ',
+      'Parental Guidance: ', COALESCE(ai_parental_advisory, '')
+    ) AS search_document
+  FROM with_parental_summary
+)
+
+SELECT
+  imdb_id,
+  tmdb_id,
+  title,
+  release_date,
+  release_year,
+  runtime_mins,
+  genres,
+  overview,
+  full_plot,
+  poster_url,
+  imdb_rating,
+  imdb_votes,
+  metascore,
+  india_certification,
+  us_certification,
+  effective_parental_rating,
+  ai_parental_advisory,
+  ai_review_consensus,
+  india_ott_link,
+  india_ott_flatrate,
+  india_ott_rent,
+  india_ott_buy,
+  india_watch_summary,
+  top_5_reviews_json,
+  search_document,
+  ml_generate_embedding_result AS content_embedding,
+  CURRENT_TIMESTAMP() AS updated_at
+FROM ML.GENERATE_EMBEDDING(
+  MODEL `project-is-movie-viewable.movie_gold.text_embedding_model`,
+  (
+    SELECT
+      *,
+      search_document AS content
+    FROM with_search_doc
+  ),
+  STRUCT(
+    TRUE AS flatten_json_output,
+    'RETRIEVAL_DOCUMENT' AS task_type
+  )
+)

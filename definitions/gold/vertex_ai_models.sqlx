@@ -1,0 +1,19 @@
+config {
+  type: "operations",
+  hasOutput: true,
+  schema: "movie_gold",
+  name: "vertex_ai_models",
+  description: "Registers BigQuery ML remote models for Gemini text generation and text embeddings."
+}
+
+CREATE MODEL IF NOT EXISTS `project-is-movie-viewable.movie_gold.gemini_flash_model`
+REMOTE WITH CONNECTION `project-is-movie-viewable.asia-south1.vertex-ai-conn`
+OPTIONS (
+  ENDPOINT = 'gemini-2.0-flash'
+);
+
+CREATE MODEL IF NOT EXISTS `project-is-movie-viewable.movie_gold.text_embedding_model`
+REMOTE WITH CONNECTION `project-is-movie-viewable.asia-south1.vertex-ai-conn`
+OPTIONS (
+  ENDPOINT = 'text-embedding-004'
+);
