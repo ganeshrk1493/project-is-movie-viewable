@@ -68,7 +68,12 @@ ai_prompts AS (
 
 with_review_summary AS (
   SELECT
-    * EXCEPT (ml_generate_text_llm_result, ml_generate_text_status, prompt),
+    * EXCEPT (
+      ml_generate_text_llm_result,
+      ml_generate_text_rai_result,
+      ml_generate_text_status,
+      prompt
+    ),
     TRIM(ml_generate_text_llm_result) AS ai_review_consensus
   FROM ML.GENERATE_TEXT(
     MODEL `project-is-movie-viewable.movie_gold.gemini_flash_model`,
@@ -88,7 +93,14 @@ with_review_summary AS (
 
 with_parental_summary AS (
   SELECT
-    * EXCEPT (ml_generate_text_llm_result, ml_generate_text_status, prompt, review_prompt, parental_prompt),
+    * EXCEPT (
+      ml_generate_text_llm_result,
+      ml_generate_text_rai_result,
+      ml_generate_text_status,
+      prompt,
+      review_prompt,
+      parental_prompt
+    ),
     TRIM(ml_generate_text_llm_result) AS ai_parental_advisory
   FROM ML.GENERATE_TEXT(
     MODEL `project-is-movie-viewable.movie_gold.gemini_flash_model`,
