@@ -3,13 +3,13 @@ config {
   hasOutput: true,
   schema: "movie_gold",
   name: "vertex_ai_models",
-  description: "Registers BigQuery ML remote models for Gemini text generation and text embeddings in asia-south1."
+  description: "Registers BigQuery ML remote models for Gemini 3.5 Flash text generation and regional text embeddings."
 }
 
 CREATE OR REPLACE MODEL `project-is-movie-viewable.movie_gold.gemini_flash_model`
 REMOTE WITH CONNECTION `project-is-movie-viewable.asia-south1.vertex-ai-conn`
 OPTIONS (
-  ENDPOINT = 'gemini-2.5-flash'
+  ENDPOINT = 'https://aiplatform.googleapis.com/v1/projects/project-is-movie-viewable/locations/global/publishers/google/models/gemini-3.5-flash'
 );
 
 CREATE OR REPLACE MODEL `project-is-movie-viewable.movie_gold.text_embedding_model`
