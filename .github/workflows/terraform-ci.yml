@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "infra/**"
+      - "functions/**"
       - ".github/workflows/terraform-ci.yml"
   pull_request:
     branches:
