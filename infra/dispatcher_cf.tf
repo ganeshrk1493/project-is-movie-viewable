@@ -17,7 +17,7 @@ resource "google_service_account" "dispatcher_sa" {
 }
 
 
-# Grant permissions to launch Dataflow jobs, act as worker SA, and read/write GCS
+# Grant permissions to build the function, launch Dataflow jobs, act as worker SA, and read/write GCS
 resource "google_project_iam_member" "dispatcher_roles" {
   for_each = toset([
     "roles/dataflow.admin",
@@ -25,7 +25,10 @@ resource "google_project_iam_member" "dispatcher_roles" {
     "roles/storage.objectAdmin",
     "roles/eventarc.eventReceiver",
     "roles/run.invoker",
-    "roles/serviceusage.serviceUsageConsumer"
+    "roles/serviceusage.serviceUsageConsumer",
+    "roles/cloudbuild.builds.builder",
+    "roles/artifactregistry.writer",
+    "roles/logging.logWriter"
   ])
   project = var.project_id
   role    = each.value
@@ -52,9 +55,11 @@ resource "google_cloudfunctions2_function" "dataflow_dispatcher" {
   location    = var.region
   description = "Launches Dataflow batch job when a .jsonl file drops into GCS raw/"
 
+
   build_config {
-    runtime     = "python311"
-    entry_point = "trigger_dataflow"
+    runtime         = "python311"
+    entry_point     = "trigger_dataflow"
+    service_account = google_service_account.dispatcher_sa.id
     source {
       storage_source {
         bucket = google_storage_bucket.bronze_lake.name
