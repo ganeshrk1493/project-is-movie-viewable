@@ -59,7 +59,7 @@ resource "google_cloud_run_v2_job" "movie_batch_ingestor" {
         }
         env {
           name  = "DEFAULT_START_DATE"
-          value = "2005-01-01"
+          value = "2000-01-01"
         }
         env {
           name  = "MIN_VOTE_COUNT"

@@ -15,7 +15,7 @@ TMDB_API_KEY = os.environ["TMDB_API_KEY"].strip()
 OMDB_API_KEY = os.environ["OMDB_API_KEY"].strip()
 
 MAX_RECORDS_PER_RUN = int(os.getenv("MAX_RECORDS_PER_RUN", "100"))
-DEFAULT_START_DATE = os.getenv("DEFAULT_START_DATE", "2005-01-01")
+DEFAULT_START_DATE = os.getenv("DEFAULT_START_DATE", "2000-01-01")
 MIN_VOTE_COUNT = int(os.getenv("MIN_VOTE_COUNT", "100"))
 
 
