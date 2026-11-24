@@ -1,0 +1,59 @@
+name: "Ingestion Job Container CI/CD"
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "ingestion/**"
+      - ".github/workflows/ingestion-job-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: project-is-movie-viewable
+  REGION: asia-south1
+  REPO_NAME: movie-pipelines
+  IMAGE_NAME: movie-batch-ingestor
+
+jobs:
+  build-and-deploy:
+    name: "Build & Update Cloud Run Job"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: "projects/792044975357/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
+          service_account: "terraform-ci-sa@project-is-movie-viewable.iam.gserviceaccount.com"
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and Push Container Image
+        working-directory: ingestion
+        run: |
+          IMAGE_URI="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}"
+          docker build -t "${IMAGE_URI}:latest" -t "${IMAGE_URI}:${{ github.sha }}" .
+          docker push "${IMAGE_URI}:latest"
+          docker push "${IMAGE_URI}:${{ github.sha }}"
+
+      - name: Update Cloud Run Job Image (if already provisioned)
+        run: |
+          if gcloud run jobs describe ${{ env.IMAGE_NAME }} --region=${{ env.REGION }} >/dev/null 2>&1; then
+            gcloud run jobs update ${{ env.IMAGE_NAME }} \
+              --region=${{ env.REGION }} \
+              --image="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          else
+            echo "Cloud Run Job not yet provisioned by Terraform; image pushed and ready."
+          fi
