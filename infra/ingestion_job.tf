@@ -55,7 +55,7 @@ resource "google_cloud_run_v2_job" "movie_batch_ingestor" {
         }
         env {
           name  = "MAX_RECORDS_PER_RUN"
-          value = "100"
+          value = "400"
         }
         env {
           name  = "DEFAULT_START_DATE"
