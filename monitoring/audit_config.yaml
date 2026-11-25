@@ -1,0 +1,16 @@
+recipient_email: "ganeshrk140893@gmail.com"
+sender_email: "ganeshrk140893@gmail.com"
+subject_prefix: "CineViewable India — Daily Pipeline Summary"
+watermark_bucket: "project-is-movie-viewable-bronze-lake"
+watermark_blob: "state/ingestion_watermark.json"
+
+tables:
+  - label: "Raw Payload (Dataflow)"
+    table_id: "project-is-movie-viewable.movie_raw.raw_movies_payload"
+    ts_column: "ingested_at"
+  - label: "Silver Staging (Dataform)"
+    table_id: "project-is-movie-viewable.movie_silver.stg_movies"
+    ts_column: "ingested_at"
+  - label: "Gold AI Catalog (Dataform + Vertex AI)"
+    table_id: "project-is-movie-viewable.movie_gold.gold_movie_catalog"
+    ts_column: "updated_at"

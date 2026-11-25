@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "ingestion/**"
+      - "monitoring/**"
       - ".github/workflows/ingestion-job-ci.yml"
   workflow_dispatch:
 
@@ -41,19 +42,17 @@ jobs:
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
       - name: Build and Push Container Image
-        working-directory: ingestion
         run: |
           IMAGE_URI="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}"
-          docker build -t "${IMAGE_URI}:latest" -t "${IMAGE_URI}:${{ github.sha }}" .
+          docker build -f ingestion/Dockerfile -t "${IMAGE_URI}:latest" -t "${IMAGE_URI}:${{ github.sha }}" .
           docker push "${IMAGE_URI}:latest"
           docker push "${IMAGE_URI}:${{ github.sha }}"
 
-      - name: Update Cloud Run Job Image (if already provisioned)
+      - name: Update Cloud Run Jobs (Ingestion + Daily Auditor)
         run: |
-          if gcloud run jobs describe ${{ env.IMAGE_NAME }} --region=${{ env.REGION }} >/dev/null 2>&1; then
-            gcloud run jobs update ${{ env.IMAGE_NAME }} \
-              --region=${{ env.REGION }} \
-              --image="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          else
-            echo "Cloud Run Job not yet provisioned by Terraform; image pushed and ready."
-          fi
+          IMAGE_TAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          for JOB_NAME in movie-batch-ingestor daily-pipeline-auditor; do
+            if gcloud run jobs describe "$JOB_NAME" --region=${{ env.REGION }} >/dev/null 2>&1; then
+              gcloud run jobs update "$JOB_NAME" --region=${{ env.REGION }} --image="$IMAGE_TAG"
+            fi
+          done
