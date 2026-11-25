@@ -3,7 +3,7 @@ config {
   schema: "movie_gold",
   name: "gold_movie_catalog",
   uniqueKey: ["imdb_id"],
-  description: "AI-enriched movie catalog with Gemini review consensus, parental guidance notes, Indian OTT availability, and semantic embeddings.",
+  description: "AI-enriched movie catalog with single-pass Gemini review consensus, parental guidance notes, Indian OTT availability, and semantic embeddings.",
   bigquery: {
     partitionBy: "DATE(updated_at)",
     clusterBy: ["effective_parental_rating", "imdb_id"]
@@ -50,70 +50,39 @@ ai_prompts AS (
   SELECT
     *,
     CONCAT(
-      'Summarize the following audience reviews for the movie "', title, '" into a crisp, balanced 2-sentence verdict highlighting what viewers praised and any common criticisms. ',
-      'If no reviews are provided, write a 1-sentence neutral note based on the plot overview. Do not use bullet points or markdown.\n\n',
-      'Overview: ', COALESCE(overview, 'N/A'), '\n',
-      'Reviews JSON: ', COALESCE(TO_JSON_STRING(top_5_reviews_json), '[]')
-    ) AS review_prompt,
-    CONCAT(
-      'Provide a concise 2-sentence family suitability and parental guidance advisory for the movie "', title, '". ',
-      'India CBFC Rating: ', COALESCE(india_certification, 'Not Rated'),
-      ', US Rating: ', COALESCE(us_certification, 'Not Rated'),
-      ', Effective Rating: ', effective_parental_rating, '. ',
-      'Based on the rating and plot below, explain what themes (violence, language, mature themes, intensity) parents should know about in plain, helpful language.\n\n',
-      'Plot: ', COALESCE(full_plot, overview, 'N/A')
-    ) AS parental_prompt
+      'Return ONLY a valid JSON object with two keys: "review_consensus" and "parental_advisory". No markdown fences.\n',
+      '1. "review_consensus": Crisp 2-sentence summary of what viewers praised/criticized from the reviews (or 1-sentence neutral plot note if reviews are empty).\n',
+      '2. "parental_advisory": Concise 2-sentence family suitability note explaining themes (violence, language, intensity) for Rating: ', effective_parental_rating, '.\n\n',
+      'Movie: ', title, '\n',
+      'Plot: ', LEFT(COALESCE(full_plot, overview, 'N/A'), 900), '\n',
+      'Reviews snippet: ', LEFT(COALESCE(TO_JSON_STRING(top_5_reviews_json), '[]'), 1500)
+    ) AS prompt
   FROM source_movies
 ),
 
-with_review_summary AS (
+with_ai_insights AS (
   SELECT
-    * EXCEPT (
-      ml_generate_text_llm_result,
-      ml_generate_text_rai_result,
-      ml_generate_text_status,
-      prompt
-    ),
-    TRIM(ml_generate_text_llm_result) AS ai_review_consensus
-  FROM ML.GENERATE_TEXT(
-    MODEL `project-is-movie-viewable.movie_gold.gemini_flash_model`,
-    (
-      SELECT
-        *,
-        review_prompt AS prompt
-      FROM ai_prompts
-    ),
-    STRUCT(
-      0.2 AS temperature,
-      180 AS max_output_tokens,
-      TRUE AS flatten_json_output
-    )
-  )
-),
-
-with_parental_summary AS (
-  SELECT
-    * EXCEPT (
-      ml_generate_text_llm_result,
-      ml_generate_text_rai_result,
-      ml_generate_text_status,
-      prompt,
-      review_prompt,
-      parental_prompt
-    ),
-    TRIM(ml_generate_text_llm_result) AS ai_parental_advisory
-  FROM ML.GENERATE_TEXT(
-    MODEL `project-is-movie-viewable.movie_gold.gemini_flash_model`,
-    (
-      SELECT
-        *,
-        parental_prompt AS prompt
-      FROM with_review_summary
-    ),
-    STRUCT(
-      0.2 AS temperature,
-      180 AS max_output_tokens,
-      TRUE AS flatten_json_output
+    * EXCEPT (ml_generate_text_llm_result, ml_generate_text_status, prompt, clean_json),
+    COALESCE(
+      NULLIF(TRIM(JSON_VALUE(clean_json, '$.review_consensus')), ''),
+      LEFT(COALESCE(overview, 'Audience consensus unavailable.'), 240)
+    ) AS ai_review_consensus,
+    COALESCE(
+      NULLIF(TRIM(JSON_VALUE(clean_json, '$.parental_advisory')), ''),
+      CONCAT('Rated ', effective_parental_rating, '. Viewer discretion advised based on plot themes.')
+    ) AS ai_parental_advisory
+  FROM (
+    SELECT
+      *,
+      REGEXP_REPLACE(TRIM(ml_generate_text_llm_result), r'^```json\s*|\s*```$', '') AS clean_json
+    FROM ML.GENERATE_TEXT(
+      MODEL `project-is-movie-viewable.movie_gold.gemini_flash_model`,
+      (SELECT * FROM ai_prompts),
+      STRUCT(
+        0.2 AS temperature,
+        260 AS max_output_tokens,
+        TRUE AS flatten_json_output
+      )
     )
   )
 ),
@@ -127,11 +96,11 @@ with_search_doc AS (
       'IMDb Rating: ', COALESCE(CAST(imdb_rating AS STRING), 'N/A'), '/10. ',
       'Parental Rating: ', effective_parental_rating, '. ',
       'Indian Streaming Availability: ', india_watch_summary, '. ',
-      'Plot: ', COALESCE(full_plot, overview, ''), ' ',
+      'Plot: ', LEFT(COALESCE(full_plot, overview, ''), 1200), ' ',
       'Audience Verdict: ', COALESCE(ai_review_consensus, ''), ' ',
       'Parental Guidance: ', COALESCE(ai_parental_advisory, '')
     ) AS search_document
-  FROM with_parental_summary
+  FROM with_ai_insights
 )
 
 SELECT
