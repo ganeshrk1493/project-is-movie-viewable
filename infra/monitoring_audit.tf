@@ -105,3 +105,63 @@ resource "google_monitoring_alert_policy" "cloud_run_job_failure_alert" {
 
   notification_channels = [google_monitoring_notification_channel.gmail_alert_channel.id]
 }
+
+# 1. Dataflow Batch Job Failure Alert (Metric-Based)
+resource "google_monitoring_alert_policy" "dataflow_job_failure_alert" {
+  display_name = "CineViewable Dataflow Job Failure Alert"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "Dataflow Job Terminated in Failed State"
+    condition_threshold {
+      filter          = "resource.type = \"dataflow_job\" AND metric.type = \"dataflow.googleapis.com/job/is_failed\""
+      duration        = "0s"
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+
+      aggregations {
+        alignment_period   = "300s"
+        per_series_aligner = "ALIGN_MAX"
+      }
+    }
+  }
+
+  notification_channels = [google_monitoring_notification_channel.gmail_alert_channel.id]
+
+  alert_strategy {
+    auto_close = "86400s"
+  }
+
+  documentation {
+    content   = "A Dataflow ingestion job in project-is-movie-viewable failed. Check Dataflow logs in asia-south1 and inspect gs://project-is-movie-viewable-bronze-lake/raw/."
+    mime_type = "text/markdown"
+  }
+}
+
+# 2. Dataform Workflow Invocation Failure Alert (Log-Based)
+resource "google_monitoring_alert_policy" "dataform_workflow_failure_alert" {
+  display_name = "CineViewable Dataform Execution Failure Alert"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "Dataform Workflow Invocation Error"
+    condition_matched_log {
+      filter = "resource.type = \"dataform.googleapis.com/Repository\" AND severity >= ERROR"
+    }
+  }
+
+  notification_channels = [google_monitoring_notification_channel.gmail_alert_channel.id]
+
+  alert_strategy {
+    notification_rate_limit {
+      period = "300s"
+    }
+    auto_close = "86400s"
+  }
+
+  documentation {
+    content   = "A Dataform Silver/Gold build failed in project-is-movie-viewable. Open BigQuery > Dataform > movie-warehouse-transforms > Workflow Execution Logs to inspect the failing SQLX node."
+    mime_type = "text/markdown"
+  }
+}
+
