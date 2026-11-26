@@ -9,7 +9,7 @@ config {
 CREATE OR REPLACE MODEL `project-is-movie-viewable.movie_gold.gemini_flash_model`
 REMOTE WITH CONNECTION `project-is-movie-viewable.asia-south1.vertex-ai-conn`
 OPTIONS (
-  ENDPOINT = 'https://aiplatform.googleapis.com/v1/projects/project-is-movie-viewable/locations/global/publishers/google/models/gemini-3.5-flash'
+  ENDPOINT = 'https://asia-south1-aiplatform.googleapis.com/v1/projects/project-is-movie-viewable/locations/asia-south1/publishers/google/models/gemini-3.5-flash-lite'
 );
 
 CREATE OR REPLACE MODEL `project-is-movie-viewable.movie_gold.text_embedding_model`
